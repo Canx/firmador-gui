@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Firmador PDF
+Comment=Firma digital por lotes de documentos PDF
+Exec=firmador-gui
+Icon=document-sign
+Terminal=false
+Type=Application
+Categories=Office;Utility;
+Keywords=pdf;firma;firmar;digital;sign;certificate;certificado;
+StartupNotify=true
