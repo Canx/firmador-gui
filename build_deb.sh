@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_NAME="firmador-gui"
-PKG_VERSION="1.0.1"
+PKG_VERSION="1.1.0"
 PKG_ARCH="all"
 OUTPUT_DIR="${SCRIPT_DIR}/dist"
 DEB_FILE="${OUTPUT_DIR}/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
@@ -41,7 +41,7 @@ Version: ${PKG_VERSION}
 Section: utils
 Priority: optional
 Architecture: ${PKG_ARCH}
-Depends: python3, python3-pyqt5, flatpak
+Depends: python3, python3-pyqt5, flatpak, poppler-utils
 Maintainer: Firmador PDF Developers
 Description: Interfaz gráfica para firma digital por lotes de documentos PDF
  Firmador GUI facilita la firma digital masiva de archivos PDF

@@ -18,6 +18,7 @@ Se apoya en el motor criptográfico de **[JSignPdf](http://jsignpdf.sourceforge.
 ## ✨ Características Principales
 
 - 📂 **Firma Masiva por Lotes:** Procesa cientos de documentos PDF de una carpeta con un solo clic, con soporte opcional para búsqueda recursiva en subcarpetas.
+- 📋 **Aplanado Automático de Formularios (*Flattening*):** Consolida de forma vectorial e irreversible campos editables (*AcroForms* o *XFA*) y capas interactivas antes de firmar (activo por defecto), garantizando la inmutabilidad del documento y evitando rechazos en sedes electrónicas de la Administración Pública.
 - 🔑 **Verificación Previa de Certificado:** Comprueba si la contraseña y el archivo de certificado son correctos antes de lanzar la firma, evitando fallos a mitad de proceso.
 - 🎨 **Estampa Visual Totalmente Configurable:**
   - Firma visible o invisible.
@@ -42,7 +43,7 @@ El paquete `.deb` configura automáticamente el acceso directo en el sistema, la
    ```
 2. **Instálalo con `apt`**:
    ```bash
-   sudo apt install ./dist/firmador-gui_1.0.0_all.deb
+   sudo apt install ./dist/firmador-gui_1.1.0_all.deb
    ```
 3. ¡Listo! Ya puedes abrir **Firmador PDF** desde el menú de aplicaciones de tu escritorio o ejecutando `firmador-gui` en tu terminal.
 

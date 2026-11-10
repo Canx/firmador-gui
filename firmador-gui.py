@@ -10,6 +10,7 @@ import os
 import json
 import subprocess
 import shutil
+import tempfile
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -71,13 +72,14 @@ class SignWorkerThread(QThread):
     batch_finished = pyqtSignal(int, int)
     log_message = pyqtSignal(str)
 
-    def __init__(self, files, dest_dir, cert_path, password, visual_opts):
+    def __init__(self, files, dest_dir, cert_path, password, visual_opts, flatten_forms=True):
         super().__init__()
         self.files = files
         self.dest_dir = dest_dir
         self.cert_path = cert_path
         self.password = password
         self.visual_opts = visual_opts
+        self.flatten_forms = flatten_forms
         self.is_cancelled = False
 
     def cancel(self):
@@ -88,63 +90,101 @@ class SignWorkerThread(QThread):
         fail_count = 0
         os.makedirs(self.dest_dir, exist_ok=True)
 
-        for index, file_path in enumerate(self.files):
-            if self.is_cancelled:
-                self.log_message.emit(">>> Proceso cancelado por el usuario.")
-                break
+        tmp_dir = None
+        if self.flatten_forms:
+            tmp_dir = tempfile.mkdtemp(prefix="firmador_flat_")
 
-            filename = os.path.basename(file_path)
-            self.file_started.emit(index, filename)
-            self.log_message.emit(f"==> Iniciando firma de: {file_path}")
+        try:
+            for index, file_path in enumerate(self.files):
+                if self.is_cancelled:
+                    self.log_message.emit(">>> Proceso cancelado por el usuario.")
+                    break
 
-            cmd = [
-                "flatpak", "run", "--filesystem=host", "io.github.intoolswetrust.JSignPdf",
-                file_path,
-                "-kst", "PKCS12",
-                "-ksf", self.cert_path,
-                "--enable-stdin-passwords",
-                "-ksp", "-",
-                "-d", self.dest_dir,
-                "--overwrite"
-            ]
+                filename = os.path.basename(file_path)
+                self.file_started.emit(index, filename)
+                self.log_message.emit(f"==> Iniciando firma de: {file_path}")
 
-            if self.visual_opts.get("visible", True):
-                cmd.extend([
-                    "-V",
-                    "-pg", str(self.visual_opts.get("page", 1)),
-                    "-llx", str(self.visual_opts.get("llx", 105)),
-                    "-lly", str(self.visual_opts.get("lly", 80)),
-                    "-urx", str(self.visual_opts.get("urx", 300)),
-                    "-ury", str(self.visual_opts.get("ury", 113)),
-                    "-fs", str(self.visual_opts.get("font_size", 7)),
-                    "--l2-text", self.visual_opts.get("l2_text", "Firmado digitalmente por:\n${signer}\nFecha: ${timestamp}")
-                ])
+                file_to_sign = file_path
+                if self.flatten_forms and tmp_dir:
+                    flat_target = os.path.join(tmp_dir, filename)
+                    if shutil.which("pdftocairo"):
+                        try:
+                            self.log_message.emit(f"    [Aplanando] Consolidando formularios interactivos en {filename}...")
+                            res = subprocess.run(
+                                ["pdftocairo", "-pdf", file_path, flat_target],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                                timeout=60
+                            )
+                            if res.returncode == 0 and os.path.exists(flat_target) and os.path.getsize(flat_target) > 0:
+                                self.log_message.emit(f"    [OK] Formulario aplanado correctamente.")
+                                file_to_sign = flat_target
+                            else:
+                                err = res.stderr.strip() or f"Código {res.returncode}"
+                                self.log_message.emit(f"    [AVISO] No se pudo aplanar {filename} ({err}). Se usará el original.")
+                        except Exception as e:
+                            self.log_message.emit(f"    [AVISO] Error al aplanar {filename}: {e}. Se usará el original.")
+                    else:
+                        self.log_message.emit("    [AVISO] 'pdftocairo' (poppler-utils) no encontrado. Se firmará sin aplanar.")
 
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                stdout, stderr = proc.communicate(input=self.password)
+                cmd = [
+                    "flatpak", "run", "--filesystem=host", "io.github.intoolswetrust.JSignPdf",
+                    file_to_sign,
+                    "-kst", "PKCS12",
+                    "-ksf", self.cert_path,
+                    "--enable-stdin-passwords",
+                    "-ksp", "-",
+                    "-d", self.dest_dir,
+                    "--overwrite"
+                ]
 
-                if proc.returncode == 0:
-                    success_count += 1
-                    self.log_message.emit(f"[OK] Firmado con éxito: {filename}")
-                    self.file_finished.emit(index, filename, True, "Firmado correctamente")
-                else:
+                if self.visual_opts.get("visible", True):
+                    cmd.extend([
+                        "-V",
+                        "-pg", str(self.visual_opts.get("page", 1)),
+                        "-llx", str(self.visual_opts.get("llx", 105)),
+                        "-lly", str(self.visual_opts.get("lly", 80)),
+                        "-urx", str(self.visual_opts.get("urx", 300)),
+                        "-ury", str(self.visual_opts.get("ury", 113)),
+                        "-fs", str(self.visual_opts.get("font_size", 7)),
+                        "--l2-text", self.visual_opts.get("l2_text", "Firmado digitalmente por:\n${signer}\nFecha: ${timestamp}")
+                    ])
+
+                try:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    stdout, stderr = proc.communicate(input=self.password)
+
+                    if proc.returncode == 0:
+                        success_count += 1
+                        self.log_message.emit(f"[OK] Firmado con éxito: {filename}")
+                        self.file_finished.emit(index, filename, True, "Firmado correctamente")
+                    else:
+                        fail_count += 1
+                        error_detail = stderr.strip() or stdout.strip() or f"Código de salida: {proc.returncode}"
+                        self.log_message.emit(f"[ERROR] Error al firmar {filename}: {error_detail}")
+                        self.file_finished.emit(index, filename, False, error_detail.splitlines()[-1] if error_detail else "Error")
+                except Exception as e:
                     fail_count += 1
-                    error_detail = stderr.strip() or stdout.strip() or f"Código de salida: {proc.returncode}"
-                    self.log_message.emit(f"[ERROR] Error al firmar {filename}: {error_detail}")
-                    self.file_finished.emit(index, filename, False, error_detail.splitlines()[-1] if error_detail else "Error")
-            except Exception as e:
-                fail_count += 1
-                self.log_message.emit(f"[EXCEPCIÓN] {str(e)}")
-                self.file_finished.emit(index, filename, False, str(e))
+                    self.log_message.emit(f"[EXCEPCIÓN] {str(e)}")
+                    self.file_finished.emit(index, filename, False, str(e))
+                finally:
+                    if file_to_sign != file_path and os.path.exists(file_to_sign):
+                        try:
+                            os.remove(file_to_sign)
+                        except Exception:
+                            pass
 
-        self.batch_finished.emit(success_count, fail_count)
+            self.batch_finished.emit(success_count, fail_count)
+        finally:
+            if tmp_dir and os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 class FirmadorMainWindow(QMainWindow):
@@ -232,6 +272,15 @@ class FirmadorMainWindow(QMainWindow):
         btn_browse_dest = QPushButton(QIcon.fromTheme("folder-open"), "Examinar...")
         btn_browse_dest.clicked.connect(self.browse_dest_dir)
         files_layout.addWidget(btn_browse_dest, 2, 2)
+
+        self.chk_flatten = QCheckBox("Aplanar formularios antes de firmar (fija campos editables)")
+        self.chk_flatten.setChecked(True)
+        self.chk_flatten.setToolTip(
+            "Convierte formularios interactivos (AcroForms/XFA) y anotaciones en contenido "
+            "vectorial fijo antes de firmar, garantizando que el documento no pueda ser alterado "
+            "y evitando rechazos en sedes electrónicas."
+        )
+        files_layout.addWidget(self.chk_flatten, 3, 1)
 
         main_tab_layout.addWidget(files_group)
 
@@ -598,7 +647,10 @@ class FirmadorMainWindow(QMainWindow):
                 item.setText("En espera")
                 item.setForeground(QColor(120, 120, 120))
 
-        self.worker = SignWorkerThread(self.files_to_sign, dest, cert, password, visual_opts)
+        flatten = self.chk_flatten.isChecked()
+        self.worker = SignWorkerThread(
+            self.files_to_sign, dest, cert, password, visual_opts, flatten_forms=flatten
+        )
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_finished.connect(self.on_file_finished)
         self.worker.batch_finished.connect(self.on_batch_finished)
@@ -658,6 +710,7 @@ class FirmadorMainWindow(QMainWindow):
             "dest_dir": str(Path.home() / "Documentos"),
             "cert_path": "",
             "recursive": True,
+            "flatten_forms": True,
             "visible": True,
             "page_mode": 0,
             "custom_page": 1,
@@ -682,6 +735,7 @@ class FirmadorMainWindow(QMainWindow):
         self.txt_dest.setText(defaults["dest_dir"])
         self.txt_cert.setText(defaults["cert_path"])
         self.chk_recursive.setChecked(defaults["recursive"])
+        self.chk_flatten.setChecked(defaults.get("flatten_forms", True))
         self.chk_visible.setChecked(defaults["visible"])
         self.cb_page_mode.setCurrentIndex(defaults["page_mode"])
         self.spin_custom_page.setValue(defaults["custom_page"])
@@ -701,6 +755,7 @@ class FirmadorMainWindow(QMainWindow):
             "dest_dir": self.txt_dest.text().strip(),
             "cert_path": self.txt_cert.text().strip(),
             "recursive": self.chk_recursive.isChecked(),
+            "flatten_forms": self.chk_flatten.isChecked(),
             "visible": self.chk_visible.isChecked(),
             "page_mode": self.cb_page_mode.currentIndex(),
             "custom_page": self.spin_custom_page.value(),
