@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_NAME="firmador-gui"
-PKG_VERSION="1.0.0"
+PKG_VERSION="1.0.1"
 PKG_ARCH="all"
 OUTPUT_DIR="${SCRIPT_DIR}/dist"
 DEB_FILE="${OUTPUT_DIR}/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb"
@@ -74,6 +74,9 @@ if command -v flatpak >/dev/null 2>&1; then
             echo ""
         fi
     fi
+
+    echo "==> Asegurando permisos de acceso al sistema de archivos para JSignPdf..."
+    flatpak override --system --filesystem=host io.github.intoolswetrust.JSignPdf 2>/dev/null || true
 fi
 
 exit 0

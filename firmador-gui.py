@@ -35,7 +35,7 @@ class CertVerifierThread(QThread):
 
     def run(self):
         cmd = [
-            "flatpak", "run", "io.github.intoolswetrust.JSignPdf",
+            "flatpak", "run", "--filesystem=host", "io.github.intoolswetrust.JSignPdf",
             "--enable-stdin-passwords",
             "-kst", "PKCS12",
             "-ksf", self.cert_path,
@@ -98,7 +98,7 @@ class SignWorkerThread(QThread):
             self.log_message.emit(f"==> Iniciando firma de: {file_path}")
 
             cmd = [
-                "flatpak", "run", "io.github.intoolswetrust.JSignPdf",
+                "flatpak", "run", "--filesystem=host", "io.github.intoolswetrust.JSignPdf",
                 file_path,
                 "-kst", "PKCS12",
                 "-ksf", self.cert_path,
