@@ -92,7 +92,9 @@ class SignWorkerThread(QThread):
 
         tmp_dir = None
         if self.flatten_forms:
-            tmp_dir = tempfile.mkdtemp(prefix="firmador_flat_")
+            cache_base = Path.home() / ".cache" / "firmador-pdf" / "tmp"
+            cache_base.mkdir(parents=True, exist_ok=True)
+            tmp_dir = tempfile.mkdtemp(prefix="flat_", dir=str(cache_base))
 
         try:
             for index, file_path in enumerate(self.files):
